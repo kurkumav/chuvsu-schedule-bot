@@ -1,0 +1,17 @@
+{
+  "name": "chuvsu-schedule-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --use-system-ca scripts/check.mjs",
+    "deploy": "wrangler deploy",
+    "secrets": "node scripts/secrets.mjs",
+    "webhook": "node scripts/webhook.mjs"
+  },
+  "devDependencies": {
+    "miniflare": "5.20260926.0-alpha",
+    "wrangler": "4.143.0"
+  }
+}

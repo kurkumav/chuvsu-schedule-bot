@@ -1,0 +1,3 @@
+# Only for LOCAL development. Store production values with wrangler secret put.
+BOT_TOKEN=token_from_BotFather
+WEBHOOK_SECRET=random_secret_at_least_32_characters

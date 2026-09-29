@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chuvsu-schedule-bot",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-29",
+  "workers_dev": true,
+  "vars": {
+    "GROUP_ID": "8075",
+    "BOT_TIMEZONE": "Europe/Moscow",
+    "DAILY_TIME": "07:00",
+    "ALLOWED_USER_IDS": ""
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "chuvsu-schedule-bot",
+    "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+    "migrations_dir": "migrations"
+  }],
+  "triggers": { "crons": ["*/5 * * * *"] }
+}
