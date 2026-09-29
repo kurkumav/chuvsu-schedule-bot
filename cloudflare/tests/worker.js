@@ -18,7 +18,7 @@ export default {
       if (path === "/__test/utilities") return Response.json({ weeks: weekSet(data.weeks), pieces: chunks(data.text), time: localTime(data.now) });
       const config = configuration(env), store = new Store(env.DB), now = () => data.now;
       if (data.allowed) config.allowed = new Set(data.allowed);
-      const bot = new Bot(config, new Telegram(env.BOT_TOKEN), new ScheduleClient(env.DB, config.groupId, fetch, now), store, now);
+      const bot = new Bot(config, new Telegram(env.BOT_TOKEN), new ScheduleClient(env.DB, config.groupId, fetch, now, data.snapshotUrl), store, now);
       if (path === "/__test/handle") await bot.handle(data.update);
       else if (path === "/__test/daily") await Promise.all(Array.from({ length: data.concurrent || 1 }, () => bot.daily()));
       else if (path === "/__test/site") return Response.json(await bot.schedule.get());

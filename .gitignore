@@ -4,6 +4,7 @@ __pycache__/
 data/
 *.log
 node_modules/
+snapshot-output/
 .wrangler/
 .dev.vars
 .dev.vars.*

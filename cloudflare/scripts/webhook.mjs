@@ -1,5 +1,5 @@
 import { Telegram } from "../src/bot.js";
-import { settings, safeError } from "./settings.mjs";
+import { settings, safeError, SetupError } from "./settings.mjs";
 try {
   const values = await settings(), telegram = new Telegram(values.BOT_TOKEN);
   const argument = process.argv[2];
@@ -20,6 +20,10 @@ try {
     try { health = await fetch(new URL("/health", url), { signal: AbortSignal.timeout(15000), redirect: "error" }); }
     catch { throw new Error("Worker health check failed"); }
     if (!health.ok || !(await health.json()).ok) throw new Error("Worker not ready");
+    // Check HTTPS and the guest parser from Cloudflare before moving a working local bot.
+    const schedule = await fetch(new URL("/check", url), { method: "POST", redirect: "error", signal: AbortSignal.timeout(90000),
+      headers: { "X-Telegram-Bot-Api-Secret-Token": values.WEBHOOK_SECRET } });
+    if (!schedule.ok || !(await schedule.json()).ok) throw new SetupError("Worker опубликован, но не смог прочитать сайт ЧувГУ. Telegram ещё не переключён: проверь исходящий HTTPS в Cloudflare.");
     await telegram.call("setWebhook", { url: new URL("/telegram", url).href, secret_token: values.WEBHOOK_SECRET,
       allowed_updates: ["message", "callback_query"], max_connections: 1, drop_pending_updates: false });
     await telegram.call("setMyCommands", { commands: [

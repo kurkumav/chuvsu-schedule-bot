@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+export class SetupError extends Error {}
 export async function settings() {
   // Environment wins; .dev.vars wins over the optional local Python .env.
   const values = {};
@@ -15,4 +16,4 @@ export async function settings() {
   if (!/^\d+:[\w-]{20,}$/u.test(values.BOT_TOKEN || "")) throw new Error("Нужен BOT_TOKEN в .dev.vars, ../.env или переменной окружения.");
   return values;
 }
-export function safeError(error) { console.error(error.message?.startsWith("Нужен ") ? error.message : "Операция не выполнена. Проверь соединение, настройки и вход в Cloudflare."); process.exitCode = 1; }
+export function safeError(error) { console.error(error instanceof SetupError || error.message?.startsWith("Нужен ") ? error.message : "Операция не выполнена. Проверь соединение, настройки и вход в Cloudflare."); process.exitCode = 1; }

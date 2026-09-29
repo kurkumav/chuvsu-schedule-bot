@@ -1,0 +1,42 @@
+name: Refresh public timetable
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/refresh-timetable.yml'
+      - 'cloudflare/scripts/snapshot.mjs'
+      - 'cloudflare/certs/**'
+permissions:
+  contents: write
+concurrency:
+  group: public-timetable-snapshot
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: code
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch with verified HTTPS
+        run: node code/cloudflare/scripts/snapshot.mjs "$RUNNER_TEMP/timetable.json"
+      - uses: actions/checkout@v4
+        with:
+          ref: schedule-cache
+          path: snapshot
+      - name: Publish public timetable only
+        working-directory: snapshot
+        run: |
+          cp "$RUNNER_TEMP/timetable.json" timetable.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add timetable.json
+          git commit -m 'Refresh public timetable'
+          git push origin HEAD:schedule-cache

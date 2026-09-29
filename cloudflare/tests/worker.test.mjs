@@ -7,7 +7,7 @@ const html = await readFile(new URL("../../tests/fixtures/group_8075_2026-09-29.
 const schema = await readFile(new URL("../migrations/0001_state.sql", import.meta.url), "utf8");
 const token = "123456:TEST_ONLY_FAKE_TELEGRAM_TOKEN", secret = "test_webhook_secret_at_least_32_characters";
 const now = Date.parse("2026-09-29T03:59:00Z");
-let mf, db, messages, calls, siteCalls, siteFails, siteRedirect, telegramCode, telegramDelay;
+let mf, db, messages, calls, siteCalls, siteFails, siteRedirect, telegramCode, telegramDelay, snapshot;
 before(async () => {
   mf = new Miniflare(convertV4MiniflareOptions({
     modules: ["tests/worker.js", "src/index.js", "src/bot.js", "src/schedule.js"].map((name) => ({ type: "ESModule", path: fileURLToPath(new URL(`../${name}`, import.meta.url)) })),
@@ -15,6 +15,7 @@ before(async () => {
     bindings: { BOT_TOKEN: token, WEBHOOK_SECRET: secret, GROUP_ID: "8075", DAILY_TIME: "07:00", BOT_TIMEZONE: "Europe/Moscow" },
     outboundService: async (request) => {
       const url = new URL(request.url);
+      if (url.hostname === "raw.githubusercontent.com") return snapshot ? Response.json(snapshot) : new Response("Not found", { status: 404 });
       if (url.hostname === "api.telegram.org") {
         const method = url.pathname.split("/").at(-1), data = await request.json();
         calls.push({ method, data });
@@ -25,7 +26,7 @@ before(async () => {
       }
       if (url.hostname === "tt.chuvsu.ru") {
         siteCalls.push({ url: request.url, method: request.method, cookie: request.headers.get("Cookie"), body: request.method === "POST" ? await request.text() : "" });
-        if (siteFails) return new Response("outage", { status: 503 });
+        if (siteFails) return new Response("outage", { status: typeof siteFails === "number" ? siteFails : 503 });
         if (siteRedirect && url.pathname.startsWith("/index/") && !request.headers.get("Cookie")?.includes("guest=yes")) return new Response(null, { status: 302, headers: { Location: siteRedirect, "Set-Cookie": "session=fake; Path=/" } });
         if (siteRedirect && url.pathname === "/auth" && request.method === "POST") return new Response(null, { status: 302, headers: { Location: "/index/grouptt/gr/8075", "Set-Cookie": "guest=yes; Path=/; Secure" } });
         if (url.pathname === "/auth" && request.method === "POST") return new Response("guest ok", { headers: { "Set-Cookie": "guest=yes; Path=/; Secure" } });
@@ -41,6 +42,7 @@ before(async () => {
 after(async () => { await mf?.dispose(); });
 beforeEach(async () => {
   messages = []; calls = []; siteCalls = []; siteFails = false; siteRedirect = null; telegramCode = 0; telegramDelay = 0;
+  snapshot = null;
   await db.batch(["DELETE FROM users", "DELETE FROM updates", "DELETE FROM cache"].map((sql) => db.prepare(sql)));
 });
 async function post(path, body, headers = {}) {
@@ -170,4 +172,34 @@ test("network failures do not expose Telegram token in responses", async () => {
 });
 test("health verifies schema and reveals no users or secrets", async () => {
   const response = await mf.dispatchFetch("https://worker.test/health"); assert.equal(response.status, 200); assert.deepEqual(await response.json(), { ok: true });
+});
+test("remote schedule probe requires secret, checks guest access and sends no Telegram messages", async () => {
+  assert.equal((await post("/check", {})).status, 403);
+  const header = { "X-Telegram-Bot-Api-Secret-Token": secret };
+  const response = await post("/check", {}, header);
+  assert.equal(response.status, 200); assert.equal((await response.json()).group, "ИВТ-13-23"); assert.equal(messages.length, 0);
+  await db.prepare("DELETE FROM cache").run(); siteFails = true;
+  assert.equal((await post("/check", {}, header)).status, 503); assert.equal(messages.length, 0);
+});
+const snapshotUrl = "https://raw.githubusercontent.com/kurkumav/chuvsu-schedule-bot/schedule-cache/timetable.json";
+const freshSnapshot = () => ({ version: 1, group_id: 8075, source_url: "https://tt.chuvsu.ru/index/grouptt/gr/8075", fetched_at: new Date(now - 900000).toISOString(), html });
+test("TLS 526 uses a fresh public snapshot, preserves lessons and labels its time", async () => {
+  siteFails = 526; snapshot = freshSnapshot();
+  const table = await helper("site", { now, snapshotUrl });
+  assert.equal(table.snapshotFetchedAt, snapshot.fetched_at);
+  const response = await helper("parse", { html: snapshot.html, queries: [{ date: "2026-09-29", subgroup: 1 }] });
+  assert.deepEqual(response.queries[0].numbers, [4, 5]);
+  await helper("handle", { now, snapshotUrl, update: message("/today") });
+  assert.match(messages.at(-1).text, /Копия сайта обновлена/u);
+});
+test("snapshot refuses stale/future timestamps, other groups, login HTML and unexpected destinations", async () => {
+  siteFails = 526;
+  for (const change of [{ fetched_at: new Date(now - 10800001).toISOString() }, { fetched_at: new Date(now + 300001).toISOString() }, { group_id: 999 }, { source_url: "https://example.com" }, { html: '<form id="authtt"></form>' }]) {
+    snapshot = { ...freshSnapshot(), ...change };
+    assert.equal((await post("/__test/site", { now, snapshotUrl })).status, 422);
+  }
+  snapshot = freshSnapshot();
+  assert.equal((await post("/__test/site", { now, snapshotUrl: "https://example.com/timetable.json" })).status, 422);
+  siteFails = 503;
+  assert.equal((await post("/__test/site", { now, snapshotUrl })).status, 422);
 });

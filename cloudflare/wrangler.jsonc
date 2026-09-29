@@ -1,20 +1,27 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "chuvsu-schedule-bot",
-  "main": "src/index.js",
-  "compatibility_date": "2026-09-29",
-  "workers_dev": true,
-  "vars": {
-    "GROUP_ID": "8075",
-    "BOT_TIMEZONE": "Europe/Moscow",
-    "DAILY_TIME": "07:00",
-    "ALLOWED_USER_IDS": ""
-  },
-  "d1_databases": [{
-    "binding": "DB",
-    "database_name": "chuvsu-schedule-bot",
-    "database_id": "REPLACE_WITH_D1_DATABASE_ID",
-    "migrations_dir": "migrations"
-  }],
-  "triggers": { "crons": ["*/5 * * * *"] }
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "chuvsu-schedule-bot",
+	"main": "src/index.js",
+	"compatibility_date": "2026-09-29",
+	"workers_dev": true,
+	"vars": {
+		"GROUP_ID": "8075",
+		"BOT_TIMEZONE": "Europe/Moscow",
+		"DAILY_TIME": "07:00",
+		"ALLOWED_USER_IDS": "",
+		"SNAPSHOT_URL": "https://raw.githubusercontent.com/kurkumav/chuvsu-schedule-bot/schedule-cache/timetable.json"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "chuvsu-schedule-bot",
+			"database_id": "e6fa559f-71d7-4b9d-ae26-cbea7a57f40c",
+			"migrations_dir": "migrations"
+		}
+	],
+	"triggers": {
+		"crons": [
+			"*/5 * * * *"
+		]
+	}
 }

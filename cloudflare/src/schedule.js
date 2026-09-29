@@ -1,7 +1,9 @@
 export const BASE_URL = "https://tt.chuvsu.ru";
 export const DAY_NAMES = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"];
 const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
-export class ScheduleError extends Error {}
+export class ScheduleError extends Error {
+  constructor(message, status = 0) { super(message); this.status = status; }
+}
 export const clean = (value) => value.replace(/\s+/gu, " ").trim();
 
 export function isoDate(year, month, day) {
@@ -178,15 +180,36 @@ export function renderTimetable(table, target, subgroup = 0) {
     for (const note of notes) lines.push(`⚠ ${note.text}`);
   }
   if (!matches.length) lines.push("По опубликованному расписанию занятий нет 🎉");
+  if (table.snapshotFetchedAt) lines.push("", `Копия сайта обновлена: ${new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", dateStyle: "short", timeStyle: "short" }).format(new Date(table.snapshotFetchedAt))} МСК. Изменения могут появляться с задержкой.`);
   lines.push("", "Замены показаны ниже соответствующей пары. Сайт может обновить расписание.", `Источник: ${BASE_URL}/index/grouptt/gr/${table.groupId}`);
   return lines.join("\n");
 }
 
 export class ScheduleClient {
-  constructor(db, groupId, fetcher = fetch, now = Date.now) {
+  constructor(db, groupId, fetcher = fetch, now = Date.now, snapshotUrl = "") {
     this.db = db; this.groupId = groupId; this.fetcher = fetcher; this.now = now;
     this.url = `${BASE_URL}/index/grouptt/gr/${groupId}`;
     this.cookies = new Map();
+    this.snapshotUrl = snapshotUrl;
+  }
+  async snapshot() {
+    if (!/^https:\/\/raw\.githubusercontent\.com\/[\w.-]+\/[\w.-]+\/schedule-cache\/timetable\.json$/u.test(this.snapshotUrl)) throw new ScheduleError("Резервная копия расписания не настроена.");
+    const fetcher = this.fetcher;
+    const response = await fetcher(this.snapshotUrl, { redirect: "manual", signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new ScheduleError("Не удалось загрузить свежую копию расписания.");
+    const reader = response.body.getReader(), chunks = []; let bytes = 0;
+    for (;;) {
+      const { done, value } = await reader.read(); if (done) break;
+      bytes += value.length;
+      if (bytes > 1048576) { await reader.cancel(); throw new ScheduleError("Неизвестный формат копии расписания."); }
+      chunks.push(value);
+    }
+    const data = JSON.parse(await new Response(new Blob(chunks)).text()), fetched = Date.parse(data.fetched_at), age = this.now() - fetched;
+    if (data.version !== 1 || data.group_id !== this.groupId || data.source_url !== this.url || !Number.isFinite(age) || age < -300000 || age >= 10800000
+      || typeof data.html !== "string" || new TextEncoder().encode(data.html).length > 524288) throw new ScheduleError("Копия расписания устарела или имеет неизвестный формат. Попробуй позже.");
+    const table = await parseTimetable(data.html, this.groupId);
+    table.snapshotFetchedAt = data.fetched_at;
+    return table;
   }
   async request(url, options = {}) {
     let method = options.method || "GET", body = options.body;
@@ -208,7 +231,7 @@ export class ScheduleClient {
         if ([301, 302, 303].includes(response.status)) { method = "GET"; body = undefined; }
         continue;
       }
-      if (!response.ok) throw new ScheduleError("Сайт расписания сейчас недоступен. Попробуй позже.");
+      if (!response.ok) throw new ScheduleError("Сайт расписания сейчас недоступен. Попробуй позже.", response.status);
       // Bound an unexpected response before buffering it.
       const reader = response.body.getReader(), chunks = [];
       let bytes = 0;
@@ -240,12 +263,20 @@ export class ScheduleClient {
       }
       table = await parseTimetable(html, this.groupId);
     } catch (error) {
-      if (error instanceof ScheduleError) throw error;
+      // Only a transport/TLS failure allows the verified public snapshot. A
+      // changed layout or denied guest login must never silently use old data.
+      if (this.snapshotUrl && (!(error instanceof ScheduleError) || error.status === 526)) {
+        try { table = await this.snapshot(); }
+        catch (snapshotError) {
+          if (snapshotError instanceof ScheduleError) throw snapshotError;
+          throw new ScheduleError("Не удалось загрузить свежую копию расписания. Попробуй позже.");
+        }
+      } else if (error instanceof ScheduleError) throw error;
       // Fetch exceptions can contain URLs: do not log or propagate them.
-      throw new ScheduleError("Сайт расписания сейчас недоступен. Попробуй через несколько минут.");
+      else throw new ScheduleError("Сайт расписания сейчас недоступен. Попробуй через несколько минут.");
     }
     await this.db.prepare("INSERT INTO cache(key,value,expires_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at")
-      .bind(key, JSON.stringify(table), this.now() + 120000).run();
+      .bind(key, JSON.stringify(table), Math.min(this.now() + 120000, table.snapshotFetchedAt ? Date.parse(table.snapshotFetchedAt) + 10800000 : Infinity)).run();
     return table;
   }
 }

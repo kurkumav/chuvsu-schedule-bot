@@ -1,9 +1,9 @@
 import { Bot, Store, Telegram, TelegramError, configuration, localTime } from "./bot.js";
-import { ScheduleClient } from "./schedule.js";
+import { ScheduleClient, ScheduleError } from "./schedule.js";
 
 function services(env) {
   const config = configuration(env), store = new Store(env.DB);
-  return { store, bot: new Bot(config, new Telegram(env.BOT_TOKEN), new ScheduleClient(env.DB, config.groupId), store) };
+  return { store, bot: new Bot(config, new Telegram(env.BOT_TOKEN), new ScheduleClient(env.DB, config.groupId, fetch, Date.now, env.SNAPSHOT_URL), store) };
 }
 function ready(env) { return env.DB && /^\d+:[\w-]{20,}$/u.test(env.BOT_TOKEN || "") && /^[\w-]{32,256}$/u.test(env.WEBHOOK_SECRET || ""); }
 async function secretMatches(actual, expected) {
@@ -35,10 +35,19 @@ export default {
       catch { return Response.json({ ok: false }, { status: 503 }); }
       return Response.json({ ok: true });
     }
-    if (path !== "/telegram") return new Response("Not found", { status: 404 });
+    if (!["/telegram", "/check"].includes(path)) return new Response("Not found", { status: 404 });
     if (request.method !== "POST") return new Response("POST required", { status: 405, headers: { Allow: "POST" } });
     if (!ready(env)) return new Response("Not configured", { status: 503 });
     if (!await secretMatches(request.headers.get("X-Telegram-Bot-Api-Secret-Token"), env.WEBHOOK_SECRET)) return new Response("Forbidden", { status: 403 });
+    if (path === "/check") {
+      try {
+        const config = configuration(env), table = await new ScheduleClient(env.DB, config.groupId, fetch, Date.now, env.SNAPSHOT_URL).get();
+        return Response.json({ ok: true, group: table.group, anchor_date: table.anchorDate, anchor_week: table.anchorWeek, snapshot_fetched_at: table.snapshotFetchedAt || null });
+      } catch (error) {
+        return Response.json({ ok: false, error: error instanceof ScheduleError ? error.message : "Schedule check failed",
+          upstream_status: error instanceof ScheduleError ? error.status : 0 }, { status: 503 });
+      }
+    }
     let update;
     try { update = await boundedJson(request); }
     catch { return new Response("Invalid update", { status: 400 }); }
