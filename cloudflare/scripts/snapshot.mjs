@@ -3,6 +3,7 @@ import { request } from "node:https";
 import { rootCertificates } from "node:tls";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
+import { setTimeout as pause } from "node:timers/promises";
 const origin = "https://tt.chuvsu.ru", groupId = 8075;
 // The university omits this intermediate from its TLS handshake. Keep normal
 // root/hostname/expiry verification, and supply the missing public certificate.
@@ -11,18 +12,26 @@ const cookies = new Map();
 async function get(url, method = "GET", body) {
   for (let redirects = 0; redirects < 5; redirects++) {
     if (new URL(url).origin !== origin) throw new Error("Unexpected timetable redirect");
-    const result = await new Promise((resolve, reject) => {
+    let result;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { result = await new Promise((resolve, reject) => {
       const headers = { "User-Agent": "ChuvsuScheduleBot/2.0", "Accept-Encoding": "identity" };
       if (cookies.size) headers.Cookie = [...cookies].map(([k, v]) => `${k}=${v}`).join("; ");
       if (body) { headers["Content-Type"] = "application/x-www-form-urlencoded"; headers["Content-Length"] = Buffer.byteLength(body); }
-      const req = request(url, { method, headers, ca, signal: AbortSignal.timeout(15000) }, (res) => {
+      const req = request(url, { method, headers, ca, family: 4, signal: AbortSignal.timeout(15000) }, (res) => {
         const chunks = []; let size = 0;
         res.on("data", (chunk) => { size += chunk.length; if (size > 524288) res.destroy(new Error("Timetable page too large")); else chunks.push(chunk); });
         res.on("error", reject);
         res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, text: Buffer.concat(chunks).toString("utf8") }));
       });
       req.on("error", reject); req.end(body);
-    });
+      }); break; }
+      catch (error) {
+        console.log(`Timetable ${method} ${new URL(url).pathname}: ${error.code || error.name}, attempt ${attempt + 1}`);
+        if (attempt === 2) throw error;
+        await pause((attempt + 1) * 2000);
+      }
+    }
     for (const cookie of result.headers["set-cookie"] || []) {
       const pair = cookie.split(";", 1)[0], equal = pair.indexOf("=");
       if (equal > 0) cookies.set(pair.slice(0, equal), pair.slice(equal + 1));
