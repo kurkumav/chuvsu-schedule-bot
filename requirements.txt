@@ -1,0 +1,5 @@
+requests==2.34.2
+beautifulsoup4==4.15.0
+python-dotenv==1.2.3
+truststore==0.10.4
+tzdata==2026.4
