@@ -21,12 +21,13 @@ from schedule import ScheduleClient, ScheduleError
 ROOT = Path(__file__).resolve().parent
 TODAY = "📅 Расписание на сегодня"
 TOMORROW = "🌅 Расписание на завтра"
+WEEK = "🗓 Расписание на неделю"
 PICK = "🗓 Выбрать день"
 GROUP = "👥 Подгруппа"
 SUBSCRIBE = "🔔 Ежедневная рассылка"
 STOP = "🔕 Отключить рассылку"
 KEYBOARD = {
-    "keyboard": [[{"text": TODAY}], [{"text": TOMORROW}, {"text": PICK}],
+    "keyboard": [[{"text": TODAY}, {"text": WEEK}], [{"text": TOMORROW}, {"text": PICK}],
                  [{"text": GROUP}, {"text": SUBSCRIBE}], [{"text": STOP}]],
     "resize_keyboard": True,
     "is_persistent": True,
@@ -180,6 +181,13 @@ class Bot:
             text = f"⚠ {error}\n\n{self.schedule.url}"
         self.telegram.send(chat_id, text)
 
+    def show_week(self, chat_id: int, today: date):
+        try:
+            text = self.schedule.get().render_week(today, self.store.user(chat_id)["subgroup"])
+        except ScheduleError as error:
+            text = f"⚠ {error}\n\n{self.schedule.url}"
+        self.telegram.send(chat_id, text)
+
     def handle(self, update: dict):
         if "callback_query" in update:
             self.callback(update["callback_query"])
@@ -195,13 +203,15 @@ class Bot:
         today = self.now().date()
         if command in ("/start", "/help"):
             self.telegram.send(chat_id, "Привет! Я показываю расписание твоей группы с сайта ЧувГУ.\n\n"
-                               "Нажми «Расписание на сегодня» или выбери день. В «Подгруппа» можно оставить только свои пары.\n\n"
+                               "Нажми «Расписание на сегодня» или «Расписание на неделю». В «Подгруппа» можно оставить только свои пары.\n\n"
                                f"Рассылка включается кнопкой и приходит в {self.config.daily_hour:02}:{self.config.daily_minute:02} "
                                f"({self.config.zone.key}).\n"
-                               "Команды: /today, /tomorrow, /days, /group, /subscribe, /unsubscribe.\n"
+                               "Команды: /today, /tomorrow, /week, /days, /group, /subscribe, /unsubscribe.\n"
                                "Любую ближайшую дату можно отправить как ДД.ММ.ГГГГ.")
         elif text == TODAY or command == "/today":
             self.show_day(chat_id, today)
+        elif text == WEEK or command == "/week":
+            self.show_week(chat_id, today)
         elif text == TOMORROW or command == "/tomorrow":
             self.show_day(chat_id, today + timedelta(days=1))
         elif text == PICK or command == "/days":

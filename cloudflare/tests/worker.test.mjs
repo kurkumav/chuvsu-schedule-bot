@@ -103,6 +103,21 @@ test("buttons, date selection, subgroup persist in D1", async () => {
   await callback("day:2026-10-01"); assert.match(messages.at(-1).text, /Б-202/u); assert.equal((await user()).subgroup, 1);
   await handle("/days"); assert.equal(messages.at(-1).reply_markup.inline_keyboard.flat().length, 14);
   await handle("/start"); assert.equal(messages.at(-1).reply_markup.keyboard[0][0].text, "📅 Расписание на сегодня");
+  assert.equal(messages.at(-1).reply_markup.keyboard[0][1].text, "🗓 Расписание на неделю");
+});
+test("week button shows Monday through Sunday with subgroup and replacements from one site read", async () => {
+  await callback("group:1"); messages = [];
+  await handle("🗓 Расписание на неделю");
+  const result = messages.map((item) => item.text).join("\n");
+  assert.match(result, /28\.09\.2026–04\.10\.2026/u);
+  assert.equal((result.match(/📅 (?:Понедельник|Вторник|Среда|Четверг|Пятница|Суббота|Воскресенье),/gu) || []).length, 7);
+  assert.match(result, /⚠ 01\.10\.2026 замена на: Аудитория: Б-202/u);
+  assert.match(result, /Воскресенье, 04\.10\.2026\n\nПо опубликованному расписанию занятий нет/u);
+  assert.ok(!result.includes("2 подгруппа"));
+  assert.equal(siteCalls.length, 3);
+  messages = [];
+  await handle("/week", now + 5 * 86400000);
+  assert.match(messages.map((item) => item.text).join("\n"), /28\.09\.2026–04\.10\.2026/u);
 });
 test("invalid and old dates do not fetch or falsely say no classes", async () => {
   await handle("31.02.2026"); assert.match(messages.at(-1).text, /Такой даты нет/u);
@@ -199,6 +214,13 @@ test("snapshot older than three hours still answers and remains cached for two m
   assert.match(messages.at(-1).text, /⚠️ Показана сохранённая копия сайта/u);
   const cache = await db.prepare("SELECT expires_at FROM cache WHERE key='schedule:8075'").first();
   assert.equal(cache.expires_at, now + 120000);
+});
+test("week view labels an old snapshot once", async () => {
+  siteFails = 526; snapshot = { ...freshSnapshot(), fetched_at: new Date(now - 3 * 86400000).toISOString() };
+  await helper("handle", { now, snapshotUrl, update: message("/week") });
+  const result = messages.map((item) => item.text).join("\n");
+  assert.equal((result.match(/Показана сохранённая копия сайта/gu) || []).length, 1);
+  assert.match(result, /Воскресенье, 04\.10\.2026/u);
 });
 test("snapshot refuses future timestamps, other groups, login HTML and unexpected destinations", async () => {
   siteFails = 526;

@@ -161,12 +161,13 @@ export function matchingLessons(table, target, subgroup = 0) {
     && (lesson.parity === null || lesson.parity === week % 2)
     && (!subgroup || lesson.subgroup === null || lesson.subgroup === subgroup)).sort((a, b) => a.number - b.number);
 }
-export function renderTimetable(table, target, subgroup = 0) {
+function dayLines(table, target, subgroup, includeWeek = true) {
   const delta = dayNumber(target) - dayNumber(table.anchorDate), week = weekFor(table, target);
   if (delta < -7 || delta > 14 || !Number.isFinite(delta)) throw new ScheduleError("Можно посмотреть последнюю неделю и 14 дней вперёд.");
   if (week < 1 || week > 30) throw new ScheduleError("Для этой даты нельзя определить учебную неделю.");
-  const lines = [`📚 ${table.group}`, `📅 ${DAY_NAMES[weekday(target)]}, ${displayDate(target)}`,
-    `Неделя ${week} · ${week % 2 ? "нечётная" : "чётная"} · ${subgroup ? `${subgroup}-я подгруппа` : "Все подгруппы"}`, ""];
+  const lines = [`📅 ${DAY_NAMES[weekday(target)]}, ${displayDate(target)}`];
+  if (includeWeek) lines.push(`Неделя ${week} · ${week % 2 ? "нечётная" : "чётная"} · ${subgroup ? `${subgroup}-я подгруппа` : "Все подгруппы"}`);
+  lines.push("");
   const matches = matchingLessons(table, target, subgroup);
   let number = null;
   for (const lesson of matches) {
@@ -180,9 +181,23 @@ export function renderTimetable(table, target, subgroup = 0) {
     for (const note of notes) lines.push(`⚠ ${note.text}`);
   }
   if (!matches.length) lines.push("По опубликованному расписанию занятий нет 🎉");
+  return lines;
+}
+function footerLines(table) {
+  const lines = [];
   if (table.snapshotFetchedAt) lines.push("", `⚠️ Показана сохранённая копия сайта от ${new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", dateStyle: "short", timeStyle: "short" }).format(new Date(table.snapshotFetchedAt))} МСК. Она может быть устаревшей; проверь замены на сайте.`);
   lines.push("", "Замены показаны ниже соответствующей пары. Сайт может обновить расписание.", `Источник: ${BASE_URL}/index/grouptt/gr/${table.groupId}`);
-  return lines.join("\n");
+  return lines;
+}
+export function renderTimetable(table, target, subgroup = 0) {
+  return [`📚 ${table.group}`, ...dayLines(table, target, subgroup), ...footerLines(table)].join("\n");
+}
+export function renderWeek(table, today, subgroup = 0) {
+  const monday = addDays(today, -weekday(today)), sunday = addDays(monday, 6), week = weekFor(table, monday);
+  const lines = [`📚 ${table.group}`, `🗓 Расписание на неделю · ${displayDate(monday)}–${displayDate(sunday)}`,
+    `Неделя ${week} · ${week % 2 ? "нечётная" : "чётная"} · ${subgroup ? `${subgroup}-я подгруппа` : "Все подгруппы"}`];
+  for (let index = 0; index < 7; index++) lines.push("", ...dayLines(table, addDays(monday, index), subgroup, false));
+  return [...lines, ...footerLines(table)].join("\n");
 }
 
 export class ScheduleClient {

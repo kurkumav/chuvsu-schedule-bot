@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from bot import Bot, Config, Store, Telegram, TelegramError, TODAY, TOMORROW, chunks
+from bot import Bot, Config, Store, Telegram, TelegramError, TODAY, TOMORROW, WEEK, chunks
 from schedule import ScheduleClient, ScheduleError, parse_timetable, week_set
 
 FIXTURE = Path(__file__).parent / "fixtures" / "group_8075_2026-09-29.html"
@@ -146,6 +146,19 @@ class BotTests(unittest.TestCase):
         self.callback("day:2026-10-01")
         self.assertIn("Б-202", self.telegram.messages[-1][1])
         self.assertEqual(self.telegram.calls[0][0], "answerCallbackQuery")
+
+    def test_week_button_and_command_show_current_monday_to_sunday(self):
+        self.callback("group:1")
+        self.message(WEEK)
+        result = self.telegram.messages[-1][1]
+        self.assertIn("28.09.2026–04.10.2026", result)
+        self.assertEqual(result.count("📅 "), 7)
+        self.assertIn("⚠ 01.10.2026 замена на: Аудитория: Б-202", result)
+        self.assertIn("Воскресенье, 04.10.2026\n\nПо опубликованному расписанию занятий нет", result)
+        self.assertNotIn("2 подгруппа", result)
+        self.now += timedelta(days=5)
+        self.message("/week")
+        self.assertIn("28.09.2026–04.10.2026", self.telegram.messages[-1][1])
 
     def test_date_and_invalid_date(self):
         self.message("31.02.2026")

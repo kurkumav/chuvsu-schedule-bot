@@ -1,8 +1,8 @@
-import { ScheduleError, addDays, dayNumber, displayDate, isoDate, renderTimetable, weekday } from "./schedule.js";
+import { ScheduleError, addDays, dayNumber, displayDate, isoDate, renderTimetable, renderWeek, weekday } from "./schedule.js";
 
-export const TODAY = "📅 Расписание на сегодня", TOMORROW = "🌅 Расписание на завтра";
+export const TODAY = "📅 Расписание на сегодня", TOMORROW = "🌅 Расписание на завтра", WEEK = "🗓 Расписание на неделю";
 const PICK = "🗓 Выбрать день", GROUP = "👥 Подгруппа", SUBSCRIBE = "🔔 Ежедневная рассылка", STOP = "🔕 Отключить рассылку";
-export const KEYBOARD = { keyboard: [[{ text: TODAY }], [{ text: TOMORROW }, { text: PICK }],
+export const KEYBOARD = { keyboard: [[{ text: TODAY }, { text: WEEK }], [{ text: TOMORROW }, { text: PICK }],
   [{ text: GROUP }, { text: SUBSCRIBE }], [{ text: STOP }]], resize_keyboard: true, is_persistent: true };
 const formatters = new Map();
 export function localTime(milliseconds, zone = "Europe/Moscow") {
@@ -124,6 +124,15 @@ export class Bot {
     }
     await this.telegram.send(chatId, text);
   }
+  async showWeek(chatId, today) {
+    let text;
+    try { text = renderWeek(await this.schedule.get(), today, (await this.store.user(chatId)).subgroup); }
+    catch (error) {
+      if (!(error instanceof ScheduleError)) throw error;
+      text = `⚠ ${error.message}\n\n${this.schedule.url}`;
+    }
+    await this.telegram.send(chatId, text);
+  }
   async handle(update) {
     if (update.callback_query) { await this.callback(update.callback_query); return; }
     const message = update.message;
@@ -132,8 +141,9 @@ export class Bot {
     const command = text.split(/\s+/u, 1)[0].split("@", 1)[0].toLowerCase();
     const current = localTime(this.now(), this.config.zone), today = current.date;
     if (["/start", "/help"].includes(command)) await this.telegram.send(chatId,
-      `Привет! Я показываю расписание твоей группы с сайта ЧувГУ.\n\nНажми «Расписание на сегодня» или выбери день. В «Подгруппа» можно оставить только свои пары.\n\nРассылка включается кнопкой и приходит в ${this.config.dailyTime} (${this.config.zone}).\nКоманды: /today, /tomorrow, /days, /group, /subscribe, /unsubscribe.\nЛюбую ближайшую дату можно отправить как ДД.ММ.ГГГГ.`);
+      `Привет! Я показываю расписание твоей группы с сайта ЧувГУ.\n\nНажми «Расписание на сегодня» или «Расписание на неделю». В «Подгруппа» можно оставить только свои пары.\n\nРассылка включается кнопкой и приходит в ${this.config.dailyTime} (${this.config.zone}).\nКоманды: /today, /tomorrow, /week, /days, /group, /subscribe, /unsubscribe.\nЛюбую ближайшую дату можно отправить как ДД.ММ.ГГГГ.`);
     else if (text === TODAY || command === "/today") await this.showDay(chatId, today);
+    else if (text === WEEK || command === "/week") await this.showWeek(chatId, today);
     else if (text === TOMORROW || command === "/tomorrow") await this.showDay(chatId, addDays(today, 1));
     else if (text === PICK || command === "/days") {
       const buttons = Array.from({ length: 14 }, (_, index) => {

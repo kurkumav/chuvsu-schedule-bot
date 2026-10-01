@@ -86,7 +86,7 @@ class Timetable:
         target_monday = target - timedelta(days=target.weekday())
         return self.anchor_week + (target_monday - anchor_monday).days // 7
 
-    def render(self, target: date, subgroup: int = 0) -> str:
+    def _day_lines(self, target: date, subgroup: int, include_week: bool = True) -> list[str]:
         if subgroup not in (0, 1, 2):
             raise ValueError("subgroup must be 0, 1 or 2")
         if not -7 <= (target - self.anchor_date).days <= 14:
@@ -95,12 +95,10 @@ class Timetable:
         if week < 1 or week > 30:
             raise ScheduleError("Для этой даты нельзя определить учебную неделю по текущему расписанию.")
         selection = "Все подгруппы" if not subgroup else f"{subgroup}-я подгруппа"
-        lines = [
-            f"📚 {self.group}",
-            f"📅 {DAY_NAMES[target.weekday()]}, {target:%d.%m.%Y}",
-            f"Неделя {week} · {'нечётная' if week % 2 else 'чётная'} · {selection}",
-            "",
-        ]
+        lines = [f"📅 {DAY_NAMES[target.weekday()]}, {target:%d.%m.%Y}"]
+        if include_week:
+            lines.append(f"Неделя {week} · {'нечётная' if week % 2 else 'чётная'} · {selection}")
+        lines.append("")
         matches = [lesson for lesson in self.lessons if lesson.on(target, week, subgroup)]
         current_number = None
         for lesson in sorted(matches, key=lambda item: item.number):
@@ -112,9 +110,25 @@ class Timetable:
             lines.append(lesson.description(target))
         if not matches:
             lines.append("По опубликованному расписанию занятий нет 🎉")
-        lines.extend(["", "Замены показаны ниже соответствующей пары. Сайт может обновить расписание.",
-                      f"Источник: {BASE_URL}/index/grouptt/gr/{self.group_id}"])
-        return "\n".join(lines)
+        return lines
+
+    def _footer_lines(self) -> list[str]:
+        return ["", "Замены показаны ниже соответствующей пары. Сайт может обновить расписание.",
+                f"Источник: {BASE_URL}/index/grouptt/gr/{self.group_id}"]
+
+    def render(self, target: date, subgroup: int = 0) -> str:
+        return "\n".join([f"📚 {self.group}", *self._day_lines(target, subgroup), *self._footer_lines()])
+
+    def render_week(self, today: date, subgroup: int = 0) -> str:
+        monday = today - timedelta(days=today.weekday())
+        sunday = monday + timedelta(days=6)
+        week = self.week_for(monday)
+        selection = "Все подгруппы" if not subgroup else f"{subgroup}-я подгруппа"
+        lines = [f"📚 {self.group}", f"🗓 Расписание на неделю · {monday:%d.%m.%Y}–{sunday:%d.%m.%Y}",
+                 f"Неделя {week} · {'нечётная' if week % 2 else 'чётная'} · {selection}"]
+        for offset in range(7):
+            lines.extend(["", *self._day_lines(monday + timedelta(days=offset), subgroup, False)])
+        return "\n".join([*lines, *self._footer_lines()])
 
 
 def parse_timetable(html: str, group_id: int) -> Timetable:
