@@ -180,7 +180,7 @@ export function renderTimetable(table, target, subgroup = 0) {
     for (const note of notes) lines.push(`⚠ ${note.text}`);
   }
   if (!matches.length) lines.push("По опубликованному расписанию занятий нет 🎉");
-  if (table.snapshotFetchedAt) lines.push("", `Копия сайта обновлена: ${new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", dateStyle: "short", timeStyle: "short" }).format(new Date(table.snapshotFetchedAt))} МСК. Изменения могут появляться с задержкой.`);
+  if (table.snapshotFetchedAt) lines.push("", `⚠️ Показана сохранённая копия сайта от ${new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", dateStyle: "short", timeStyle: "short" }).format(new Date(table.snapshotFetchedAt))} МСК. Она может быть устаревшей; проверь замены на сайте.`);
   lines.push("", "Замены показаны ниже соответствующей пары. Сайт может обновить расписание.", `Источник: ${BASE_URL}/index/grouptt/gr/${table.groupId}`);
   return lines.join("\n");
 }
@@ -205,8 +205,8 @@ export class ScheduleClient {
       chunks.push(value);
     }
     const data = JSON.parse(await new Response(new Blob(chunks)).text()), fetched = Date.parse(data.fetched_at), age = this.now() - fetched;
-    if (data.version !== 1 || data.group_id !== this.groupId || data.source_url !== this.url || !Number.isFinite(age) || age < -300000 || age >= 10800000
-      || typeof data.html !== "string" || new TextEncoder().encode(data.html).length > 524288) throw new ScheduleError("Копия расписания устарела или имеет неизвестный формат. Попробуй позже.");
+    if (data.version !== 1 || data.group_id !== this.groupId || data.source_url !== this.url || !Number.isFinite(age) || age < -300000
+      || typeof data.html !== "string" || new TextEncoder().encode(data.html).length > 524288) throw new ScheduleError("Копия расписания имеет неизвестный формат. Попробуй позже.");
     const table = await parseTimetable(data.html, this.groupId);
     table.snapshotFetchedAt = data.fetched_at;
     return table;
@@ -276,7 +276,7 @@ export class ScheduleClient {
       else throw new ScheduleError("Сайт расписания сейчас недоступен. Попробуй через несколько минут.");
     }
     await this.db.prepare("INSERT INTO cache(key,value,expires_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at")
-      .bind(key, JSON.stringify(table), Math.min(this.now() + 120000, table.snapshotFetchedAt ? Date.parse(table.snapshotFetchedAt) + 10800000 : Infinity)).run();
+      .bind(key, JSON.stringify(table), this.now() + 120000).run();
     return table;
   }
 }

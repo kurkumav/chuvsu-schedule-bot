@@ -190,11 +190,19 @@ test("TLS 526 uses a fresh public snapshot, preserves lessons and labels its tim
   const response = await helper("parse", { html: snapshot.html, queries: [{ date: "2026-09-29", subgroup: 1 }] });
   assert.deepEqual(response.queries[0].numbers, [4, 5]);
   await helper("handle", { now, snapshotUrl, update: message("/today") });
-  assert.match(messages.at(-1).text, /Копия сайта обновлена/u);
+  assert.match(messages.at(-1).text, /Показана сохранённая копия сайта/u);
 });
-test("snapshot refuses stale/future timestamps, other groups, login HTML and unexpected destinations", async () => {
+test("snapshot older than three hours still answers and remains cached for two minutes", async () => {
   siteFails = 526;
-  for (const change of [{ fetched_at: new Date(now - 10800001).toISOString() }, { fetched_at: new Date(now + 300001).toISOString() }, { group_id: 999 }, { source_url: "https://example.com" }, { html: '<form id="authtt"></form>' }]) {
+  snapshot = { ...freshSnapshot(), fetched_at: new Date(now - 3 * 86400000).toISOString() };
+  await helper("handle", { now, snapshotUrl, update: message("/today") });
+  assert.match(messages.at(-1).text, /⚠️ Показана сохранённая копия сайта/u);
+  const cache = await db.prepare("SELECT expires_at FROM cache WHERE key='schedule:8075'").first();
+  assert.equal(cache.expires_at, now + 120000);
+});
+test("snapshot refuses future timestamps, other groups, login HTML and unexpected destinations", async () => {
+  siteFails = 526;
+  for (const change of [{ fetched_at: new Date(now + 300001).toISOString() }, { fetched_at: "invalid" }, { group_id: 999 }, { source_url: "https://example.com" }, { html: '<form id="authtt"></form>' }]) {
     snapshot = { ...freshSnapshot(), ...change };
     assert.equal((await post("/__test/site", { now, snapshotUrl })).status, 422);
   }
